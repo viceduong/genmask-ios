@@ -24,13 +24,36 @@ struct ResultView: View {
                     .aspectRatio(contentMode: .fit)
                     .background(Color.black.opacity(0.04))
                     .cornerRadius(12)
-                    // A long press is the fastest before/after there is: it
-                    // flips while held and flips back on release.
-                    .onLongPressGesture(minimumDuration: 0.01, pressing: { pressing in
-                        showingPlate = pressing
-                    }, perform: {})
+                    // A press-and-hold is the fastest before/after there is:
+                    // it flips while held and flips back on release.
+                    //
+                    // DragGesture(minimumDistance: 0) rather than
+                    // onLongPressGesture: the long-press `pressing` callback
+                    // goes false as soon as the press *succeeds*, so with a
+                    // short minimumDuration the image flipped back while the
+                    // finger was still down -- it looked like nothing worked.
+                    // A zero-distance drag tracks the finger itself: onChanged
+                    // for down, onEnded for up.
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { _ in
+                                if !showingPlate { showingPlate = true }
+                            }
+                            .onEnded { _ in showingPlate = false }
+                    )
 
-                Text(showingPlate ? "Original — release to see the render" : "Render — hold to compare")
+                // A plain toggle as well as the hold: holding is quicker for
+                // a glance, but a locked comparison is what you want when
+                // looking closely at one region.
+                Picker("", selection: $showingPlate) {
+                    Text("Render").tag(false)
+                    Text("Original").tag(true)
+                }
+                .pickerStyle(.segmented)
+
+                Text(showingPlate
+                     ? "Showing the original photo"
+                     : "Showing the render — press and hold the image to compare")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
