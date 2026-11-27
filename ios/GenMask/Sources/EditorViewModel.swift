@@ -148,6 +148,11 @@ final class EditorViewModel: ObservableObject {
             if error is CancellationError ||
                 (nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled) {
                 errorMessage = "The upload was cancelled before it finished."
+            } else if nsError.domain == NSURLErrorDomain {
+                // Carry the numeric code: URLSession's wording for transport
+                // faults ("cannot parse response" for -1017) describes the
+                // body and hides the fact that it is a connection problem.
+                errorMessage = "Network error \(nsError.code): \(nsError.localizedDescription)"
             } else {
                 errorMessage = error.localizedDescription
             }

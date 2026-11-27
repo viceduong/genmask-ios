@@ -95,6 +95,16 @@ final class API {
         configuration.timeoutIntervalForRequest = 120
         configuration.timeoutIntervalForResource = 1800
         configuration.waitsForConnectivity = true
+        // Cloudflare advertises HTTP/3 (`alt-svc: h3`), and URLSession will
+        // move to QUIC on a later connection once it has seen that header.
+        // On iOS 15 that path fails for multipart uploads with
+        // NSURLErrorCannotParseResponse (-1017) -- which surfaces as "cannot
+        // parse response" and reads like a malformed body rather than a
+        // transport problem. The first request succeeds over HTTP/2, so the
+        // symptom is a connection that works until it is reused.
+        if #available(iOS 15.0, *) {
+            configuration.assumesHTTP3Capable = false
+        }
         self.session = URLSession(configuration: configuration)
     }
 
@@ -158,9 +168,13 @@ final class API {
         var request = self.request("api/plates", method: "POST")
         let boundary = "genmask.\(UUID().uuidString)"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = Self.multipart(boundary: boundary, name: "file",
-                                          filename: "plate.jpg", mime: "image/jpeg", payload: jpeg)
-        let (data, response) = try await session.data(for: request)
+        let body = Self.multipart(boundary: boundary, name: "file",
+                                   filename: "plate.jpg", mime: "image/jpeg", payload: jpeg)
+        // upload(for:from:) rather than setting httpBody: a multi-megabyte
+        // photo is streamed instead of being held in the request, and an
+        // explicit length keeps the transfer from being sent chunked.
+        request.setValue(String(body.count), forHTTPHeaderField: "Content-Length")
+        let (data, response) = try await session.upload(for: request, from: body)
         let json = try check(data, response)
         guard let id = json["id"] as? String,
               let width = json["width"] as? Int,
@@ -196,9 +210,10 @@ final class API {
         var request = self.request("api/plates/\(plate.id)/mask", method: "PUT")
         let boundary = "genmask.\(UUID().uuidString)"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = Self.multipart(boundary: boundary, name: "file",
-                                          filename: "mask.png", mime: "image/png", payload: png)
-        let (data, response) = try await session.data(for: request)
+        let body = Self.multipart(boundary: boundary, name: "file",
+                                   filename: "mask.png", mime: "image/png", payload: png)
+        request.setValue(String(body.count), forHTTPHeaderField: "Content-Length")
+        let (data, response) = try await session.upload(for: request, from: body)
         _ = try check(data, response)
     }
 
