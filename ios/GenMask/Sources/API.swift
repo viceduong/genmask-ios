@@ -223,11 +223,13 @@ final class API {
 
     /// Start a job. `mask` is an aperture name or "manual" for inpainting, and
     /// is ignored for a full-frame render.
-    func createJob(plate: Plate, prompt: String, mode: JobMode, mask: String?) async throws -> String {
+    func createJob(plate: Plate, prompt: String, mode: JobMode, mask: String?,
+                   keepFace: Bool) async throws -> String {
         var request = self.request("api/jobs", method: "POST")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var body: [String: Any] = ["plateId": plate.id, "prompt": prompt, "mode": mode.rawValue]
         if mode == .inpaint, let mask { body["mask"] = mask }
+        body["keepFace"] = keepFace
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await session.data(for: request)
         let json = try check(data, response)

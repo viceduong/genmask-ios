@@ -48,6 +48,12 @@ final class EditorViewModel: ObservableObject {
 
     @Published var prompt = ""
     @Published var mode: JobMode = .inpaint
+    /// Paste the photograph's own face back over a free render.
+    ///
+    /// Only offered where nothing freezes the head. The Clothes and Body
+    /// apertures already keep the face as the photograph's pixels, so there
+    /// is nothing for this to add there.
+    @Published var keepFace = true
     @Published private(set) var stage: JobStage?
     @Published private(set) var progress: Double = 0
     @Published private(set) var queuePosition: Int?
@@ -300,6 +306,14 @@ final class EditorViewModel: ObservableObject {
         maskChoice = .manual
     }
 
+    /// True when the render has no frozen head, so the face is generated and
+    /// can drift: full-frame, and the person aperture.
+    var faceCanDrift: Bool {
+        if mode == .full { return true }
+        if case .aperture("person")? = maskChoice { return true }
+        return false
+    }
+
     var canSubmit: Bool {
         guard plate != nil, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isBusy else {
             return false
@@ -330,7 +344,8 @@ final class EditorViewModel: ObservableObject {
             }
 
             let jobId = try await api.createJob(plate: plate, prompt: prompt, mode: mode,
-                                                mask: mode == .inpaint ? maskChoice?.wireName : nil)
+                                                mask: mode == .inpaint ? maskChoice?.wireName : nil,
+                                                keepFace: keepFace && faceCanDrift)
             currentJob = jobId
             watch(jobId: jobId, api: api)
         } catch {

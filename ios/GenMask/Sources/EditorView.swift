@@ -342,9 +342,22 @@ struct EditorView: View {
 
             Text(model.mode == .inpaint
                  ? "Only the masked pixels are repainted; everything else is the photograph."
-                 : "The whole frame is generated again, so the background and the pose are free. The face is kept by matching it against the photo rather than by freezing pixels.")
+                 : "The whole frame is generated again, so the background and the pose are free.")
                 .font(.caption)
                 .foregroundColor(.secondary)
+
+            // Only where the head is generated. The clothes and body
+            // apertures already keep the face as the photograph's own pixels.
+            if model.faceCanDrift {
+                Toggle(isOn: $model.keepFace) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Keep the original face")
+                        Text("Puts the photo's own face back over the result, so the pose is free but the person is exact.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
         }
     }
 
