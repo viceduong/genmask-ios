@@ -328,7 +328,7 @@ struct EditorView: View {
 
             Text(model.mode == .inpaint
                  ? "Only the masked pixels are repainted; everything else is the photograph."
-                 : "The whole frame is generated again. Use it when the picture should change, not just a region.")
+                 : "The whole frame is generated again, so the background and the pose are free. The face is kept by matching it against the photo rather than by freezing pixels.")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
