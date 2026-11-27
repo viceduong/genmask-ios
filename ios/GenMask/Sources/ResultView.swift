@@ -15,6 +15,7 @@ struct ResultView: View {
     @Environment(\.presentationMode) private var presentation
     @State private var showingPlate = false
     @State private var saveMessage: String?
+    @State private var fullscreen = false
 
     var body: some View {
         NavigationView {
@@ -41,6 +42,10 @@ struct ResultView: View {
                             }
                             .onEnded { _ in showingPlate = false }
                     )
+                    // Tap for fullscreen. A render is judged at 1:1 -- whether
+                    // a jaw drifted or a nail softened is invisible at preview
+                    // size -- so the viewer is the point, not a nicety.
+                    .onTapGesture { fullscreen = true }
 
                 // A plain toggle as well as the hold: holding is quicker for
                 // a glance, but a locked comparison is what you want when
@@ -53,7 +58,7 @@ struct ResultView: View {
 
                 Text(showingPlate
                      ? "Showing the original photo"
-                     : "Showing the render — press and hold the image to compare")
+                     : "Tap to open fullscreen, or press and hold to compare")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
@@ -73,6 +78,9 @@ struct ResultView: View {
                 .padding(.bottom)
             }
             .padding()
+            .fullScreenCover(isPresented: $fullscreen) {
+                FullscreenImageView(result: result, plate: plate, title: "Render")
+            }
             .navigationBarTitle("Result", displayMode: .inline)
             .navigationBarItems(trailing: Button("Done") {
                 presentation.wrappedValue.dismiss()

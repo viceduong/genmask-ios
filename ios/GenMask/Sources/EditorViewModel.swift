@@ -247,6 +247,38 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
+    /// The plate with the current mask burned into it, for fullscreen
+    /// inspection. Composited rather than layered as two views, because the
+    /// zoom view takes one image and the mask has to zoom with the photo --
+    /// the question being asked is whether the aperture edge falls where it
+    /// should, which only means anything at 1:1.
+    var maskOverlayImage: UIImage? {
+        guard let plateImage else { return nil }
+        let mask: UIImage?
+        switch maskChoice {
+        case .aperture(let name): mask = apertureMasks[name]
+        case .manual: mask = drawing.baseMask
+        case nil: mask = nil
+        }
+        guard let mask else { return plateImage }
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: plateImage.size, format: format).image { context in
+            plateImage.draw(in: CGRect(origin: .zero, size: plateImage.size))
+            context.cgContext.setAlpha(0.45)
+            context.cgContext.setBlendMode(.multiply)
+            UIColor.systemRed.setFill()
+            // Clip the red wash to the mask, so only the aperture is tinted.
+            if let cgMask = mask.cgImage {
+                context.cgContext.clip(to: CGRect(origin: .zero, size: plateImage.size),
+                                       mask: cgMask)
+                context.cgContext.fill(CGRect(origin: .zero, size: plateImage.size))
+            }
+        }
+    }
+
     func select(aperture name: String) {
         maskChoice = .aperture(name)
         // Switching aperture discards hand corrections on purpose: they were

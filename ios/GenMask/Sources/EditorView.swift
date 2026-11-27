@@ -40,6 +40,11 @@ struct EditorView: View {
     /// there.
     @FocusState private var promptFocused: Bool
 
+    /// Fullscreen inspection of the plate and whichever mask is current.
+    /// Checking that an aperture actually covers the right region is the one
+    /// thing a 340pt preview cannot answer.
+    @State private var inspecting = false
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -79,6 +84,12 @@ struct EditorView: View {
             } label: {
                 Image(systemName: "gearshape")
             })
+            .fullScreenCover(isPresented: $inspecting) {
+                if let plateImage = model.plateImage {
+                    FullscreenImageView(result: model.maskOverlayImage ?? plateImage,
+                                        plate: nil, title: "Photo")
+                }
+            }
             .sheet(item: $route) { route in
                 switch route {
                 case .picker(let source):
@@ -186,6 +197,9 @@ struct EditorView: View {
                         }
                     }
                     .offset(x: frame.minX, y: frame.minY)
+                    .contentShape(Rectangle())
+                    // Not in paint mode: there a tap is a brush stroke.
+                    .onTapGesture { inspecting = true }
                 }
             }
         }
