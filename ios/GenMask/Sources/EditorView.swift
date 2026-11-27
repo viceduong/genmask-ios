@@ -44,6 +44,14 @@ struct EditorView: View {
                         promptSection
                         submitSection
                     }
+                    if model.plateImage != nil && model.plate == nil
+                        && !model.isBusy && model.errorMessage == nil {
+                        Text("The photo did not upload. Check the server address and token in Settings, then pick it again.")
+                            .font(.footnote)
+                            .foregroundColor(.orange)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     if let error = model.errorMessage {
                         Text(error)
                             .font(.footnote)
@@ -63,7 +71,10 @@ struct EditorView: View {
                 switch route {
                 case .picker(let source):
                     ImagePicker(source: source) { image in
-                        Task { await model.use(image: image) }
+                        // Not `Task { ... }` here: this closure runs as the
+                        // picker dismisses, and a task created in the sheet's
+                        // own view tree is cancelled when that tree goes away.
+                        model.accept(image: image)
                     }
                 case .settings:
                     SettingsView(model: model)
@@ -117,6 +128,14 @@ struct EditorView: View {
                     }
                     .buttonStyle(.bordered)
                 }
+            }
+
+            if model.plateImage != nil && model.plate == nil && model.isBusy {
+                HStack(spacing: 6) {
+                    ProgressView()
+                    Text("Uploading the photo…").font(.caption)
+                }
+                .foregroundColor(.secondary)
             }
 
             if let status = model.hostStatus {

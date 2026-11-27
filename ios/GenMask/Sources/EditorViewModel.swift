@@ -57,6 +57,8 @@ final class EditorViewModel: ObservableObject {
 
     private var eventSource: EventSource?
     private var currentJob: String?
+    /// Retained so the upload survives the picker sheet being dismissed.
+    private var uploadTask: Task<Void, Never>?
 
     private var api: API? {
         guard let url = URL(string: serverURL.trimmingCharacters(in: .whitespacesAndNewlines)),
@@ -96,6 +98,21 @@ final class EditorViewModel: ObservableObject {
 
     // MARK: Plate
 
+    /// Hand a freshly picked photo to the model.
+    ///
+    /// Synchronous, and it owns the upload task itself, because the caller is
+    /// the image picker's completion handler: the picker dismisses as soon as
+    /// it fires, and a `Task` started inside that sheet's view hierarchy is
+    /// torn down with it -- the upload was cancelled before it could finish,
+    /// which is why the photo appeared and nothing else ever did. A task held
+    /// here belongs to the view model and outlives the sheet.
+    func accept(image: UIImage) {
+        uploadTask?.cancel()
+        uploadTask = Task { [weak self] in
+            await self?.use(image: image)
+        }
+    }
+
     func use(image: UIImage) async {
         // Normalise orientation first. A photo straight from the camera carries
         // its rotation in EXIF, and the host reads pixels: an unrotated upload
@@ -120,7 +137,16 @@ final class EditorViewModel: ObservableObject {
         do {
             plate = try await api.uploadPlate(upright)
         } catch {
-            errorMessage = error.localizedDescription
+            // A silent failure here is exactly what made the app look dead, so
+            // cancellation is named rather than left as an opaque message.
+            // URLSession reports it as an NSError, not a CancellationError.
+            let nsError = error as NSError
+            if error is CancellationError ||
+                (nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled) {
+                errorMessage = "The upload was cancelled before it finished."
+            } else {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
