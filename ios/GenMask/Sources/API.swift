@@ -168,11 +168,17 @@ final class API {
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         let body = Self.multipart(boundary: boundary, name: "file",
                                    filename: "plate.jpg", mime: "image/jpeg", payload: jpeg)
-        // upload(for:from:) rather than setting httpBody: a multi-megabyte
-        // photo is streamed instead of being held in the request, and an
-        // explicit length keeps the transfer from being sent chunked.
-        request.setValue(String(body.count), forHTTPHeaderField: "Content-Length")
-        let (data, response) = try await session.upload(for: request, from: body)
+        // From a temporary FILE rather than from Data in memory.
+        //
+        // The in-memory path was failing on device with
+        // NSURLErrorCannotParseResponse (-1017) while the identical request
+        // succeeded from curl against both the tunnel and the origin, so the
+        // fault was in how the request was being produced rather than in what
+        // came back. upload(for:fromFile:) hands the body to the system as a
+        // file and lets it do its own framing, which is also the path Apple
+        // documents for payloads of this size.
+        let (data, response) = try await Self.uploadFromTemporaryFile(
+            session: session, request: request, body: body)
         let json = try check(data, response)
         guard let id = json["id"] as? String,
               let width = json["width"] as? Int,
@@ -210,8 +216,8 @@ final class API {
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         let body = Self.multipart(boundary: boundary, name: "file",
                                    filename: "mask.png", mime: "image/png", payload: png)
-        request.setValue(String(body.count), forHTTPHeaderField: "Content-Length")
-        let (data, response) = try await session.upload(for: request, from: body)
+        let (data, response) = try await Self.uploadFromTemporaryFile(
+            session: session, request: request, body: body)
         _ = try check(data, response)
     }
 
@@ -254,6 +260,33 @@ final class API {
     }
 
     var bearer: String { token }
+
+    /// Write the body to a temporary file, upload it, and clean up.
+    ///
+    /// The file is removed whether or not the upload succeeds; a failed
+    /// upload that leaves multi-megabyte temporaries behind would fill the
+    /// container after a few retries.
+    private static func uploadFromTemporaryFile(
+        session: URLSession, request: URLRequest, body: Data
+    ) async throws -> (Data, URLResponse) {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("genmask-\(UUID().uuidString).body")
+        try body.write(to: url, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: url) }
+        do {
+            return try await session.upload(for: request, fromFile: url)
+        } catch let error as NSError where
+            error.domain == NSURLErrorDomain &&
+            (error.code == NSURLErrorCannotParseResponse ||
+             error.code == NSURLErrorNetworkConnectionLost) {
+            // Retry once on a brand-new ephemeral session. A connection that
+            // has gone bad is kept in the shared pool and reused, so the
+            // retry has to come from a session that cannot have inherited it.
+            let fresh = URLSession(configuration: .ephemeral)
+            defer { fresh.finishTasksAndInvalidate() }
+            return try await fresh.upload(for: request, fromFile: url)
+        }
+    }
 
     private static func multipart(boundary: String, name: String, filename: String,
                                   mime: String, payload: Data) -> Data {
