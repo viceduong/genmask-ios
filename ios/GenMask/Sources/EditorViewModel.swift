@@ -61,8 +61,12 @@ final class EditorViewModel: ObservableObject {
     private var uploadTask: Task<Void, Never>?
 
     private var api: API? {
-        guard let url = URL(string: serverURL.trimmingCharacters(in: .whitespacesAndNewlines)),
-              url.scheme != nil, !token.isEmpty else { return nil }
+        // Trailing slashes and a missing scheme are the two things people
+        // actually type; both are repaired here rather than rejected.
+        var text = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        while text.hasSuffix("/") { text.removeLast() }
+        if !text.isEmpty, !text.contains("://") { text = "https://" + text }
+        guard let url = URL(string: text), url.scheme != nil, !token.isEmpty else { return nil }
         return API(baseURL: url, token: token)
     }
 

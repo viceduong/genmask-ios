@@ -78,7 +78,16 @@ final class API {
     private let session: URLSession
 
     init(baseURL: URL, token: String) {
-        self.baseURL = baseURL
+        // Strip trailing slashes before storing. `appendingPathComponent` does
+        // not collapse them, so a host typed as "https://example.com/" becomes
+        // "https://example.com//api/plates" -- and a double slash does not
+        // reach the origin through Cloudflare, which answers "error code: 1033"
+        // as plain text. The app then fails to parse it as JSON and reports a
+        // malformed reply, which points at the server rather than at the one
+        // character that caused it.
+        var text = baseURL.absoluteString
+        while text.hasSuffix("/") { text.removeLast() }
+        self.baseURL = URL(string: text) ?? baseURL
         self.token = token
         let configuration = URLSessionConfiguration.default
         // A 2 MP render is minutes, and the phone may be the only thing
