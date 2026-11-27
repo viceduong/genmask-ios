@@ -102,11 +102,29 @@ final class API {
         }
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         guard (200..<300).contains(http.statusCode) else {
-            let detail = json?["error"] as? String
-            throw APIError(message: detail ?? "Server returned \(http.statusCode)")
+            if let detail = json?["error"] as? String {
+                throw APIError(message: "\(http.statusCode): \(detail)")
+            }
+            throw APIError(message: "HTTP \(http.statusCode). \(Self.snippet(data))")
         }
-        guard let json else { throw APIError(message: "Malformed response") }
+        guard let json else {
+            // 2xx with a body we cannot read means something answered that is
+            // not the server: name the content type and show the start of it,
+            // because that is what identifies the interloper.
+            let type = http.value(forHTTPHeaderField: "Content-Type") ?? "no content type"
+            throw APIError(message: "Reply was not JSON (\(type), \(data.count) bytes). \(Self.snippet(data))")
+        }
         return json
+    }
+
+    /// First line or so of a response body, for an error message.
+    private static func snippet(_ data: Data) -> String {
+        guard !data.isEmpty else { return "Empty reply." }
+        let text = String(decoding: data.prefix(300), as: UTF8.self)
+            .split(whereSeparator: { $0.isNewline })
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "Unreadable reply." : String(text.prefix(220))
     }
 
     /// Reachability and whether the host's ComfyUI is actually up — the two
@@ -138,7 +156,7 @@ final class API {
         guard let id = json["id"] as? String,
               let width = json["width"] as? Int,
               let height = json["height"] as? Int else {
-            throw APIError(message: "Server did not describe the uploaded plate")
+            throw APIError(message: "Upload reply was missing id/width/height: \(json)")
         }
         return Plate(id: id, width: width, height: height)
     }
