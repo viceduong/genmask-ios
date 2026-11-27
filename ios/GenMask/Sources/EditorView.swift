@@ -9,10 +9,30 @@ import UIKit
 /// side is what makes that visible.
 struct EditorView: View {
     @StateObject private var model = EditorViewModel()
-    @State private var showingPicker = false
-    @State private var pickerSource: UIImagePickerController.SourceType = .photoLibrary
-    @State private var showingSettings = false
-    @State private var showingResult = false
+
+    /// Which sheet is up.
+    ///
+    /// One `.sheet(item:)` rather than three `.sheet(isPresented:)` modifiers:
+    /// stacking them on the same view is silently lossy -- SwiftUI honours only
+    /// one, so the photo picker and Settings simply never appeared while the
+    /// result sheet worked. Carrying the picker's source in the case also fixes
+    /// a staleness bug, because a `.sheet(isPresented:)` closure captures the
+    /// surrounding @State when the sheet is built, not when it opens.
+    private enum Route: Identifiable {
+        case picker(UIImagePickerController.SourceType)
+        case settings
+        case result
+
+        var id: String {
+            switch self {
+            case .picker(let source): return "picker-\(source.rawValue)"
+            case .settings: return "settings"
+            case .result: return "result"
+            }
+        }
+    }
+
+    @State private var route: Route?
 
     var body: some View {
         NavigationView {
@@ -35,25 +55,26 @@ struct EditorView: View {
             }
             .navigationBarTitle("GenMask", displayMode: .inline)
             .navigationBarItems(trailing: Button {
-                showingSettings = true
+                route = .settings
             } label: {
                 Image(systemName: "gearshape")
             })
-            .sheet(isPresented: $showingSettings) {
-                SettingsView(model: model)
-            }
-            .sheet(isPresented: $showingPicker) {
-                ImagePicker(source: pickerSource) { image in
-                    Task { await model.use(image: image) }
-                }
-            }
-            .sheet(isPresented: $showingResult) {
-                if let result = model.result, let plate = model.plateImage {
-                    ResultView(plate: plate, result: result)
+            .sheet(item: $route) { route in
+                switch route {
+                case .picker(let source):
+                    ImagePicker(source: source) { image in
+                        Task { await model.use(image: image) }
+                    }
+                case .settings:
+                    SettingsView(model: model)
+                case .result:
+                    if let result = model.result, let plate = model.plateImage {
+                        ResultView(plate: plate, result: result)
+                    }
                 }
             }
             .onChange(of: model.result) { value in
-                if value != nil { showingResult = true }
+                if value != nil { route = .result }
             }
         }
         .navigationViewStyle(.stack)
@@ -82,8 +103,7 @@ struct EditorView: View {
 
             HStack(spacing: 12) {
                 Button {
-                    pickerSource = .photoLibrary
-                    showingPicker = true
+                    route = .picker(.photoLibrary)
                 } label: {
                     Label("Photo", systemImage: "photo").frame(maxWidth: .infinity)
                 }
@@ -91,8 +111,7 @@ struct EditorView: View {
 
                 if UIImagePickerController.isSourceTypeAvailable(.camera) {
                     Button {
-                        pickerSource = .camera
-                        showingPicker = true
+                        route = .picker(.camera)
                     } label: {
                         Label("Camera", systemImage: "camera").frame(maxWidth: .infinity)
                     }
@@ -301,7 +320,7 @@ struct EditorView: View {
             .disabled(!model.canSubmit)
 
             if model.result != nil {
-                Button("Show result") { showingResult = true }
+                Button("Show result") { route = .result }
                     .font(.subheadline)
             }
         }
