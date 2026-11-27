@@ -95,16 +95,6 @@ final class API {
         configuration.timeoutIntervalForRequest = 120
         configuration.timeoutIntervalForResource = 1800
         configuration.waitsForConnectivity = true
-        // Cloudflare advertises HTTP/3 (`alt-svc: h3`), and URLSession will
-        // move to QUIC on a later connection once it has seen that header.
-        // On iOS 15 that path fails for multipart uploads with
-        // NSURLErrorCannotParseResponse (-1017) -- which surfaces as "cannot
-        // parse response" and reads like a malformed body rather than a
-        // transport problem. The first request succeeds over HTTP/2, so the
-        // symptom is a connection that works until it is reused.
-        if #available(iOS 15.0, *) {
-            configuration.assumesHTTP3Capable = false
-        }
         self.session = URLSession(configuration: configuration)
     }
 
@@ -112,6 +102,14 @@ final class API {
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        // Cloudflare advertises HTTP/3 in `alt-svc`, and URLSession moves to
+        // QUIC on a later connection once it has seen that header. On iOS 15
+        // that path fails for multipart uploads with
+        // NSURLErrorCannotParseResponse (-1017), whose wording ("cannot parse
+        // response") describes a body problem and hides that the transport is
+        // at fault. The first request succeeds over HTTP/2, which is why the
+        // host check reports ready and the upload that follows does not.
+        request.assumesHTTP3Capable = false
         return request
     }
 
@@ -240,6 +238,7 @@ final class API {
             : baseURL.appendingPathComponent(path)
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.assumesHTTP3Capable = false
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw APIError(message: "Could not load the image")
