@@ -72,11 +72,20 @@ struct EditorView: View {
                 }
                 .padding()
             }
-            // Tapping away from the editor dismisses the keyboard, which is
-            // what the rest of iOS does. `.simultaneousGesture` so it does not
-            // swallow taps meant for the buttons underneath.
-            .simultaneousGesture(
-                TapGesture().onEnded { promptFocused = false }
+            // No tap recogniser here on purpose. `.simultaneousGesture` on this
+            // scroll view silently breaks every segmented Picker underneath it:
+            // the picker is UIKit-backed, so a SwiftUI tap recogniser on an
+            // ancestor takes the touch before the control sees it, and the mode
+            // and aperture pickers simply stop responding. Keyboard dismissal
+            // is handled by the toolbar's Done button, by Generate, and by the
+            // scroll gesture below, none of which compete for taps.
+            // Dismiss on scroll, the way Mail and Notes do. A drag is not a
+            // tap, so this cannot steal a button press.
+            .gesture(
+                DragGesture(minimumDistance: 12)
+                    .onChanged { _ in
+                        if promptFocused { promptFocused = false }
+                    }
             )
             .navigationBarTitle("GenMask", displayMode: .inline)
             .navigationBarItems(trailing: Button {
