@@ -42,6 +42,23 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
           echo "APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name 'GenMask.app' -type d -path '*/Debug-iphoneos/*' | head -1)" >> $GITHUB_ENV
 
+      # The build succeeds whether or not the usage descriptions survive into
+      # the bundle, and an app missing them crashes the moment it touches the
+      # camera or the photo library. So assert on the built plist rather than
+      # trusting the build's exit code.
+      - name: Verify the built Info.plist
+        run: |
+          PLIST="${{ env.APP_PATH }}/Info.plist"
+          for key in NSCameraUsageDescription NSPhotoLibraryUsageDescription                      NSPhotoLibraryAddUsageDescription MinimumOSVersion; do
+            value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" 2>/dev/null || true)
+            if [ -z "$value" ]; then
+              echo "::error::$key is missing from the built Info.plist"
+              /usr/libexec/PlistBuddy -c Print "$PLIST"
+              exit 1
+            fi
+            echo "$key = $value"
+          done
+
       # Unsigned Debug build: install with Sideloadly, AltStore or TrollStore.
       # A free Apple ID is enough; expect a 7-day re-sign interval.
       - name: Package the .ipa

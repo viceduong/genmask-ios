@@ -19,8 +19,11 @@ targets:
     platform: iOS
     sources:
       - path: GenMask/Sources
-    info:
-      path: GenMask/Info.plist
+    # No `info:` block on purpose: it would make XcodeGen synthesise an
+    # Info.plist that shadows the checked-in one, and the synthesised plist has
+    # none of the usage descriptions -- so the app would crash the moment it
+    # opened the camera or saved to Photos. INFOPLIST_FILE below points at the
+    # real file instead.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: lol.2031.genmask
