@@ -34,6 +34,12 @@ struct EditorView: View {
 
     @State private var route: Route?
 
+    /// Whether the prompt editor holds the keyboard. A TextEditor has no
+    /// return key to dismiss with -- newlines are content -- so without an
+    /// explicit way out the keyboard covers the Generate button and stays
+    /// there.
+    @FocusState private var promptFocused: Bool
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -61,6 +67,12 @@ struct EditorView: View {
                 }
                 .padding()
             }
+            // Tapping away from the editor dismisses the keyboard, which is
+            // what the rest of iOS does. `.simultaneousGesture` so it does not
+            // swallow taps meant for the buttons underneath.
+            .simultaneousGesture(
+                TapGesture().onEnded { promptFocused = false }
+            )
             .navigationBarTitle("GenMask", displayMode: .inline)
             .navigationBarItems(trailing: Button {
                 route = .settings
@@ -295,7 +307,18 @@ struct EditorView: View {
             TextEditor(text: $model.prompt)
                 .frame(height: 110)
                 .padding(6)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.3)))
+                .overlay(RoundedRectangle(cornerRadius: 8)
+                    .stroke(promptFocused ? Color.accentColor : Color.secondary.opacity(0.3)))
+                .focused($promptFocused)
+                .toolbar {
+                    // The only reliable dismissal for a multi-line editor on
+                    // iOS 15: its return key inserts a newline, and there is
+                    // no scrollDismissesKeyboard until iOS 16.
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") { promptFocused = false }
+                    }
+                }
 
             Picker("Mode", selection: $model.mode) {
                 Text("Inpaint").tag(JobMode.inpaint)
@@ -328,6 +351,9 @@ struct EditorView: View {
             }
 
             Button {
+                // Submitting with the keyboard up leaves it covering the
+                // progress bar, which is the thing you want to watch.
+                promptFocused = false
                 Task { await model.submit() }
             } label: {
                 Text(model.isBusy ? "Working…" : "Generate")
@@ -352,6 +378,9 @@ struct SettingsView: View {
     @ObservedObject var model: EditorViewModel
     @Environment(\.presentationMode) private var presentation
 
+    private enum Field: Hashable { case url, token }
+    @FocusState private var focused: Field?
+
     var body: some View {
         NavigationView {
             Form {
@@ -360,7 +389,15 @@ struct SettingsView: View {
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
                         .keyboardType(.URL)
+                        .focused($focused, equals: .url)
+                        .submitLabel(.next)
+                        .onSubmit { focused = .token }
                     SecureField("Access token", text: $model.token)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .focused($focused, equals: .token)
+                        .submitLabel(.done)
+                        .onSubmit { focused = nil }
                 }
                 Section {
                     Button("Test connection") {
@@ -375,8 +412,15 @@ struct SettingsView: View {
                     EmptyView()
                 }
             }
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { focused = nil }
+                }
+            }
             .navigationBarTitle("Settings", displayMode: .inline)
             .navigationBarItems(trailing: Button("Done") {
+                focused = nil
                 model.saveConnection()
                 presentation.wrappedValue.dismiss()
             })
