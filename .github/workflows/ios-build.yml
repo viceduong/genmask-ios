@@ -1,0 +1,59 @@
+name: Build GenMask
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-build.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build GenMask (iOS 15)
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install XcodeGen
+        run: |
+          curl -sL https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip -o /tmp/xcodegen.zip
+          cd /tmp && unzip -q xcodegen.zip -d xcgen
+          echo "/tmp/xcgen/xcodegen/bin" >> $GITHUB_PATH
+
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: xcodegen generate --spec project.yml
+
+      - name: Build for device
+        working-directory: ios
+        run: |
+          xcodebuild \
+            -project GenMask.xcodeproj \
+            -scheme GenMask \
+            -destination 'generic/platform=iOS' \
+            -configuration Debug \
+            clean build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+          echo "APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name 'GenMask.app' -type d -path '*/Debug-iphoneos/*' | head -1)" >> $GITHUB_ENV
+
+      # Unsigned Debug build: install with Sideloadly, AltStore or TrollStore.
+      # A free Apple ID is enough; expect a 7-day re-sign interval.
+      - name: Package the .ipa
+        run: |
+          mkdir -p Payload
+          cp -R "${{ env.APP_PATH }}" Payload/
+          zip -qr GenMask.ipa Payload/
+          ls -la GenMask.ipa
+
+      - name: Upload the .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: GenMask-ipa
+          path: GenMask.ipa
+          retention-days: 14

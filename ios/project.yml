@@ -1,0 +1,33 @@
+name: GenMask
+options:
+  bundleIdPrefix: lol.2031.genmask
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: false
+  generateEmptyDirectories: false
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  GenMask:
+    type: application
+    platform: iOS
+    sources:
+      - path: GenMask/Sources
+    info:
+      path: GenMask/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: lol.2031.genmask
+        INFOPLIST_FILE: GenMask/Info.plist
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        GENERATE_INFOPLIST_FILE: NO
+        # The app is a thin client over a slow host; strict concurrency would
+        # only be noise against a single @MainActor view model.
+        SWIFT_STRICT_CONCURRENCY: minimal
+    dependencies: []
