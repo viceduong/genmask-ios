@@ -61,27 +61,85 @@ final class EditorViewModel: ObservableObject {
     private var uploadTask: Task<Void, Never>?
 
     private var api: API? {
-        // Trailing slashes and a missing scheme are the two things people
-        // actually type; both are repaired here rather than rejected.
-        var text = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        while text.hasSuffix("/") { text.removeLast() }
-        if !text.isEmpty, !text.contains("://") { text = "https://" + text }
-        guard let url = URL(string: text), url.scheme != nil, !token.isEmpty else { return nil }
+        guard let url = Self.normalisedURL(serverURL), !token.isEmpty else { return nil }
         return API(baseURL: url, token: token)
     }
 
+    /// Repair the kinds of address people actually paste.
+    ///
+    /// A URL copied out of chat or documentation arrives wrapped in whatever
+    /// marked it up: backticks, quotes, angle brackets, a trailing full stop,
+    /// sometimes an invisible zero-width space. `URL(string:)` does not reject
+    /// those -- it will happily build a URL whose *host* ends in a backtick --
+    /// so the request goes out, fails inside the transport, and surfaces as
+    /// NSURLErrorCannotParseResponse (-1017). That error reads as "cannot
+    /// parse response", which points at the reply rather than at the address,
+    /// and a single stray character can therefore cost hours to find.
+    static func normalisedURL(_ raw: String) -> URL? {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Markup and punctuation that survives a copy, taken off either end.
+        let junk = CharacterSet(charactersIn: "`'\"<>()[]{},;: \t\n\r\u{200B}\u{200C}\u{FEFF}")
+        while let first = text.unicodeScalars.first, junk.contains(first) {
+            text.removeFirst()
+        }
+        while let last = text.unicodeScalars.last,
+              junk.contains(last) || last == "." || last == "/" {
+            text.removeLast()
+        }
+
+        guard !text.isEmpty else { return nil }
+        if !text.contains("://") { text = "https://" + text }
+
+        guard let url = URL(string: text),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = url.host, !host.isEmpty,
+              // A host is letters, digits, dots and hyphens. Anything else
+              // means the cleanup missed something, and saying the address is
+              // wrong beats sending a request that cannot possibly work.
+              host.range(of: "^[A-Za-z0-9.-]+$", options: .regularExpression) != nil
+        else { return nil }
+        return url
+    }
+
     func saveConnection() {
+        // Write back the cleaned form, so a pasted address is repaired once
+        // and the field then shows what is actually being used.
+        if let url = Self.normalisedURL(serverURL) {
+            serverURL = url.absoluteString
+        }
+        token = token.trimmingCharacters(in: .whitespacesAndNewlines)
         UserDefaults.standard.set(serverURL, forKey: "serverURL")
         UserDefaults.standard.set(token, forKey: "token")
+    }
+
+    /// Repair an address that an earlier version already stored.
+    ///
+    /// Cleaning only new input would leave the app broken for exactly the
+    /// person who hit the bug, since their bad value is already saved.
+    func repairStoredConnection() {
+        if let url = Self.normalisedURL(serverURL), url.absoluteString != serverURL {
+            serverURL = url.absoluteString
+            UserDefaults.standard.set(serverURL, forKey: "serverURL")
+        }
+        let cleanToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanToken != token {
+            token = cleanToken
+            UserDefaults.standard.set(token, forKey: "token")
+        }
     }
 
     /// Reachability check. Reports "no ComfyUI" distinctly from "no server",
     /// because the first is a host the person has to start something on and the
     /// second is an address or token they have to fix.
     func checkHost() async {
+        repairStoredConnection()
         guard let api else {
-            hostStatus = "Enter the server address and token"
             hostReady = false
+            hostStatus = token.isEmpty
+                ? "Enter the server address and token"
+                : "That server address is not valid. It should look like https://example.com"
             return
         }
         do {
@@ -92,7 +150,9 @@ final class EditorViewModel: ObservableObject {
             } else if queue > 0 {
                 hostStatus = "Host ready — \(queue) job\(queue == 1 ? "" : "s") in the queue"
             } else {
-                hostStatus = "Host ready"
+                // Naming the host it reached is what would have shown the
+                // stray backtick immediately.
+                hostStatus = "Host ready — \(api.host)"
             }
         } catch {
             hostReady = false

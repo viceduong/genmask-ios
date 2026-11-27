@@ -261,6 +261,9 @@ final class API {
 
     var bearer: String { token }
 
+    /// The host actually being contacted, for the status line.
+    var host: String { baseURL.host ?? baseURL.absoluteString }
+
     /// Write the body to a temporary file, upload it, and clean up.
     ///
     /// The file is removed whether or not the upload succeeds; a failed
